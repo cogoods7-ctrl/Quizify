@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quizify - Local Study Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f8f6;
+            color: #333;
+        }
+        .claude-card {
+            background: white;
+            border: 1px solid #e5e2dd;
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+        .claude-button {
+            background-color: #d97706;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        .claude-button:hover {
+            background-color: #b45309;
+        }
+        .glass-nav {
+            background: rgba(249, 248, 246, 0.8);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid #e5e2dd;
+        }
+        .notecard {
+            perspective: 1000px;
+            height: 220px;
+        }
+        .notecard-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+        .notecard.flipped .notecard-inner {
+            transform: rotateY(180deg);
+        }
+        .notecard-front, .notecard-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #e5e2dd;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .notecard-back {
+            transform: rotateY(180deg);
+            background-color: #fffaf0;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <nav class="glass-nav sticky top-0 z-10 px-6 py-4">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-semibold text-amber-900">Quizify</h1>
+            <div class="text-sm text-gray-500">Local & Private Study Tool</div>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto p-6 space-y-8">
+        <!-- Upload Section -->
+        <section id="upload-section" class="claude-card p-8 text-center space-y-6">
+            <div class="space-y-2">
+                <h2 class="text-xl font-medium">Upload your study materials</h2>
+                <p class="text-gray-500">Upload images or PDFs. We'll process them right in your browser.</p>
+            </div>
+            
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-12 hover:border-amber-500 transition-colors cursor-pointer">
+                <input type="file" id="file-input" class="hidden" multiple accept="image/*,.pdf">
+                <div class="space-y-4">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+                </div>
+            </div>
+
+            <div id="status" class="hidden text-sm font-medium text-amber-700"></div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results-section" class="hidden space-y-8">
+            <div class="flex border-b border-gray-200">
+                <button onclick="switchTab('quiz')" id="tab-quiz" class="px-6 py-3 font-medium border-b-2 border-amber-600 text-amber-600">Practice Quiz</button>
+                <button onclick="switchTab('notecards')" id="tab-notecards" class="px-6 py-3 font-medium text-gray-500 hover:text-amber-600">Notecards</button>
+            </div>
+
+            <!-- Quiz View -->
+            <div id="quiz-view" class="space-y-6">
+                <div id="quiz-container" class="space-y-6"></div>
+                <div class="flex justify-center pt-4">
+                    <button onclick="gradeQuiz()" class="claude-button px-12 py-3 rounded-lg font-medium shadow-sm">Submit Quiz</button>
+                </div>
+            </div>
+
+            <!-- Notecards View -->
+            <div id="notecards-view" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="notecards-container" class="contents"></div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Initialize PDF.js
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('status');
+        const resultsSection = document.getElementById('results-section');
+        const quizContainer = document.getElementById('quiz-container');
+        const notecardsContainer = document.getElementById('notecards-container');
+
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('border-amber-500'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('border-amber-500');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-amber-500');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            status.classList.remove('hidden');
+            status.textContent = "Processing files locally... Please wait.";
+            
+            let fullText = "";
+            try {
+                for (const file of files) {
+                    if (file.type === "application/pdf") {
+                        fullText += await processPDF(file);
+                    } else if (file.type.startsWith("image/")) {
+                        fullText += await processImage(file);
+                    }
+                }
+
+                if (fullText.trim().length < 50) {
+                    status.textContent = "Insufficient text found. Please try a clearer file.";
+                    return;
+                }
+
+                generateContent(fullText);
+                status.textContent = "Success! Content generated.";
+                resultsSection.classList.remove('hidden');
+                document.getElementById('upload-section').classList.add('hidden');
+            } catch (err) {
+                console.error(err);
+                status.textContent = "Error processing files. Please try again.";
+            }
+        }
+
+        async function processPDF(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+            let text = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(" ") + "\n";
+            }
+            return text;
+        }
+
+        async function processImage(file) {
+            const worker = await Tesseract.createWorker();
+            await worker.loadLanguage('eng');
+            await worker.initialize('eng');
+            const { data: { text } } = await worker.recognize(file);
+            await worker.terminate();
+            return text;
+        }
+
+        function generateContent(text) {
+            const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 40);
+            const words = text.toLowerCase().match(/\b[a-z]{6,}\b/g) || [];
+            const freq = {};
+            words.forEach(w => freq[w] = (freq[w] || 0) + 1);
+            const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 30).map(e => e[0]);
+
+            const quiz = [];
+            const cards = [];
+
+            sentences.forEach((s, i) => {
+                const found = keywords.filter(k => s.toLowerCase().includes(k));
+                if (!found.length) return;
+                const target = found[0];
+
+                // Quiz Generation (up to 20)
+                if (quiz.length < 20) {
+                    const type = i % 3;
+                    if (type === 0) { // MCQ
+                        const distractors = keywords.filter(k => k !== target).sort(() => 0.5 - Math.random()).slice(0, 3);
+                        if (distractors.length === 3) {
+                            quiz.push({ type: 'mcq', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target, options: [target, ...distractors].sort(() => 0.5 - Math.random()) });
+                        }
+                    } else if (type === 1) { // T/F
+                        const isTrue = Math.random() > 0.5;
+                        const qText = isTrue ? s : s.replace(new RegExp(target, 'gi'), keywords.find(k => k !== target) || "incorrect concept");
+                        quiz.push({ type: 'tf', q: `True or False: ${qText}`, a: isTrue ? 'true' : 'false' });
+                    } else { // Short Answer
+                        quiz.push({ type: 'sa', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target });
+                    }
+                }
+
+                // Notecard Generation (up to 30)
+                if (cards.length < 30) {
+                    cards.push({ front: `Explain the concept of: **${target.toUpperCase()}**`, back: s });
+                }
+            });
+
+            renderQuiz(quiz);
+            renderNotecards(cards);
+        }
+
+        function renderQuiz(questions) {
+            quizContainer.innerHTML = questions.map((q, i) => `
+                <div class="claude-card p-6 space-y-4 quiz-item" data-answer="${q.a}" data-type="${q.type}">
+                    <div class="text-xs font-bold text-amber-600 uppercase tracking-widest">${q.type}</div>
+                    <p class="font-medium text-lg">${q.q}</p>
+                    ${q.type === 'mcq' ? `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            ${q.options.map(opt => `<label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-amber-50"><input type="radio" name="q${i}" value="${opt}" class="w-4 h-4 text-amber-600"><span>${opt}</span></label>`).join('')}
+                        </div>
+                    ` : q.type === 'tf' ? `
+                        <div class="flex gap-4">
+                            ${['True', 'False'].map(v => `<label class="flex-1 flex items-center justify-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-amber-50"><input type="radio" name="q${i}" value="${v.toLowerCase()}" class="w-4 h-4 text-amber-600"><span>${v}</span></label>`).join('')}
+                        </div>
+                    ` : `
+                        <input type="text" name="q${i}" class="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Your answer...">
+                    `}
+                    <div class="feedback hidden mt-2 p-3 rounded-lg text-sm font-medium"></div>
+                </div>
+            `).join('');
+        }
+
+        function renderNotecards(cards) {
+            notecardsContainer.innerHTML = cards.map(card => `
+                <div class="notecard" onclick="this.classList.toggle('flipped')">
+                    <div class="notecard-inner">
+                        <div class="notecard-front">
+                            <div class="text-xs font-bold text-amber-600 uppercase tracking-widest mb-2">Concept</div>
+                            <p class="text-gray-800 font-medium">${card.front}</p>
+                            <div class="mt-auto text-gray-400 text-xs">Click to flip</div>
+                        </div>
+                        <div class="notecard-back">
+                            <div class="text-xs font-bold text-amber-600 uppercase tracking-widest mb-2">Explanation</div>
+                            <p class="text-gray-700 text-sm">${card.back}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function gradeQuiz() {
+            const items = document.querySelectorAll('.quiz-item');
+            let score = 0;
+            items.forEach((item, i) => {
+                const type = item.dataset.type;
+                const correct = item.dataset.answer;
+                const feedback = item.querySelector('.feedback');
+                let user = '';
+                
+                if (type === 'mcq' || type === 'tf') {
+                    const selected = item.querySelector(`input[name="q${i}"]:checked`);
+                    user = selected ? selected.value : '';
+                } else {
+                    user = item.querySelector('input').value.trim().toLowerCase();
+                }
+
+                feedback.classList.remove('hidden', 'bg-green-50', 'text-green-700', 'bg-red-50', 'text-red-700');
+                if (user === correct) {
+                    score++;
+                    feedback.textContent = "Correct!";
+                    feedback.classList.add('bg-green-50', 'text-green-700');
+                } else {
+                    feedback.innerHTML = `Incorrect. Correct answer: <strong>${correct}</strong>`;
+                    feedback.classList.add('bg-red-50', 'text-red-700');
+                }
+                feedback.classList.remove('hidden');
+            });
+            alert(`Quiz Complete! Score: ${score} / ${items.length}`);
+        }
+
+        function switchTab(tab) {
+            const quizView = document.getElementById('quiz-view');
+            const notecardsView = document.getElementById('notecards-view');
+            const tabQuiz = document.getElementById('tab-quiz');
+            const tabNotecards = document.getElementById('tab-notecards');
+
+            if (tab === 'quiz') {
+                quizView.classList.remove('hidden');
+                notecardsView.classList.add('hidden');
+                tabQuiz.classList.add('border-amber-600', 'text-amber-600');
+                tabNotecards.classList.remove('border-amber-600', 'text-amber-600');
+                tabNotecards.classList.add('text-gray-500');
+            } else {
+                quizView.classList.add('hidden');
+                notecardsView.classList.remove('hidden');
+                tabNotecards.classList.add('border-amber-600', 'text-amber-600');
+                tabQuiz.classList.remove('border-amber-600', 'text-amber-600');
+                tabQuiz.classList.add('text-gray-500');
+            }
+        }
+    </script>
+</body>
+</html>
