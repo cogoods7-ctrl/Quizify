@@ -3,89 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quizify - Local Study Assistant</title>
+    <title>Quizify - Professional Study Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f9f8f6;
-            color: #333;
-        }
-        .claude-card {
-            background: white;
-            border: 1px solid #e5e2dd;
-            border-radius: 12px;
-            transition: all 0.2s ease;
-        }
-        .claude-button {
-            background-color: #d97706;
-            color: white;
-            transition: background-color 0.2s;
-        }
-        .claude-button:hover {
-            background-color: #b45309;
-        }
-        .glass-nav {
-            background: rgba(249, 248, 246, 0.8);
-            backdrop-filter: blur(8px);
-            border-bottom: 1px solid #e5e2dd;
-        }
-        .notecard {
-            perspective: 1000px;
-            height: 220px;
-        }
-        .notecard-inner {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            text-align: center;
-            transition: transform 0.6s;
-            transform-style: preserve-3d;
-            cursor: pointer;
-        }
-        .notecard.flipped .notecard-inner {
-            transform: rotateY(180deg);
-        }
-        .notecard-front, .notecard-back {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            -webkit-backface-visibility: hidden;
-            backface-visibility: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid #e5e2dd;
-            background: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        .notecard-back {
-            transform: rotateY(180deg);
-            background-color: #fffaf0;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f9f8f6; color: #333; }
+        .claude-card { background: white; border: 1px solid #e5e2dd; border-radius: 12px; transition: all 0.2s ease; }
+        .claude-button { background-color: #d97706; color: white; transition: background-color 0.2s; }
+        .claude-button:hover { background-color: #b45309; }
+        .glass-nav { background: rgba(249, 248, 246, 0.8); backdrop-filter: blur(8px); border-bottom: 1px solid #e5e2dd; }
+        .notecard { perspective: 1000px; height: 220px; }
+        .notecard-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; cursor: pointer; }
+        .notecard.flipped .notecard-inner { transform: rotateY(180deg); }
+        .notecard-front, .notecard-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; border-radius: 12px; border: 1px solid #e5e2dd; background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .notecard-back { transform: rotateY(180deg); background-color: #fffaf0; }
         .hidden { display: none; }
+        #processing-canvas { display: none; }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #d97706; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="min-h-screen">
     <nav class="glass-nav sticky top-0 z-10 px-6 py-4">
         <div class="max-w-4xl mx-auto flex justify-between items-center">
             <h1 class="text-2xl font-semibold text-amber-900">Quizify</h1>
-            <div class="text-sm text-gray-500">Local & Private Study Tool</div>
+            <div class="text-sm text-gray-500">Professional Study Assistant</div>
         </div>
     </nav>
 
     <main class="max-w-4xl mx-auto p-6 space-y-8">
-        <!-- Upload Section -->
         <section id="upload-section" class="claude-card p-8 text-center space-y-6">
             <div class="space-y-2">
                 <h2 class="text-xl font-medium">Upload your study materials</h2>
-                <p class="text-gray-500">Upload images or PDFs. We'll process them right in your browser.</p>
+                <p class="text-gray-500">Advanced validation engine. No more gibberish quizzes.</p>
             </div>
             
             <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-12 hover:border-amber-500 transition-colors cursor-pointer">
@@ -98,17 +50,24 @@
                 </div>
             </div>
 
-            <div id="status" class="hidden text-sm font-medium text-amber-700"></div>
+            <div id="status" class="hidden text-sm font-medium text-amber-700">
+                <div class="loader"></div><span id="status-text">Processing...</span>
+            </div>
+            
+            <div id="error-display" class="hidden p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <p class="font-bold mb-1">Analysis Failed</p>
+                <p id="error-message"></p>
+            </div>
+
+            <canvas id="processing-canvas"></canvas>
         </section>
 
-        <!-- Results Section -->
         <section id="results-section" class="hidden space-y-8">
             <div class="flex border-b border-gray-200">
                 <button onclick="switchTab('quiz')" id="tab-quiz" class="px-6 py-3 font-medium border-b-2 border-amber-600 text-amber-600">Practice Quiz</button>
                 <button onclick="switchTab('notecards')" id="tab-notecards" class="px-6 py-3 font-medium text-gray-500 hover:text-amber-600">Notecards</button>
             </div>
 
-            <!-- Quiz View -->
             <div id="quiz-view" class="space-y-6">
                 <div id="quiz-container" class="space-y-6"></div>
                 <div class="flex justify-center pt-4">
@@ -116,7 +75,6 @@
                 </div>
             </div>
 
-            <!-- Notecards View -->
             <div id="notecards-view" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div id="notecards-container" class="contents"></div>
             </div>
@@ -124,33 +82,35 @@
     </main>
 
     <script>
-        // Initialize PDF.js
         const pdfjsLib = window['pdfjs-dist/build/pdf'];
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         const status = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+        const errorDisplay = document.getElementById('error-display');
+        const errorMessage = document.getElementById('error-message');
         const resultsSection = document.getElementById('results-section');
         const quizContainer = document.getElementById('quiz-container');
         const notecardsContainer = document.getElementById('notecards-container');
+        const canvas = document.getElementById('processing-canvas');
+        const ctx = canvas.getContext('2d');
 
         dropZone.onclick = () => fileInput.click();
         fileInput.onchange = (e) => handleFiles(e.target.files);
-
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('border-amber-500'); };
         dropZone.ondragleave = () => dropZone.classList.remove('border-amber-500');
-        dropZone.ondrop = (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('border-amber-500');
-            handleFiles(e.dataTransfer.files);
-        };
+        dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('border-amber-500'); handleFiles(e.dataTransfer.files); };
 
         async function handleFiles(files) {
             if (files.length === 0) return;
             
+            // Reset UI
             status.classList.remove('hidden');
-            status.textContent = "Processing files locally... Please wait.";
+            errorDisplay.classList.add('hidden');
+            resultsSection.classList.add('hidden');
+            statusText.textContent = "Analyzing legibility and content...";
             
             let fullText = "";
             try {
@@ -162,19 +122,55 @@
                     }
                 }
 
-                if (fullText.trim().length < 50) {
-                    status.textContent = "Insufficient text found. Please try a clearer file.";
+                // QUALITY GATE: Validate the extracted text
+                const validation = validateText(fullText);
+                if (!validation.isValid) {
+                    showError(validation.reason);
                     return;
                 }
 
-                generateContent(fullText);
-                status.textContent = "Success! Content generated.";
+                generateContent(validation.cleanedText);
+                status.classList.add('hidden');
                 resultsSection.classList.remove('hidden');
                 document.getElementById('upload-section').classList.add('hidden');
             } catch (err) {
                 console.error(err);
-                status.textContent = "Error processing files. Please try again.";
+                showError("An unexpected error occurred during processing.");
             }
+        }
+
+        function validateText(text) {
+            const words = text.split(/\s+/).filter(w => w.length > 0);
+            if (words.length < 10) {
+                return { isValid: false, reason: "The file contains too little text to analyze." };
+            }
+
+            // Calculate "Real Word" density
+            // A real word is mostly alphabetic and has a reasonable length
+            const realWords = words.filter(word => {
+                const alpha = word.replace(/[^a-zA-Z]/g, '');
+                return alpha.length >= 3 && (alpha.length / word.length) > 0.7;
+            });
+
+            const density = realWords.length / words.length;
+            
+            if (density < 0.4) {
+                return { 
+                    isValid: false, 
+                    reason: "The handwriting is too messy or the photo quality is too low to decipher accurately. Please try a clearer photo or more legible notes." 
+                };
+            }
+
+            return { 
+                isValid: true, 
+                cleanedText: realWords.join(' ') 
+            };
+        }
+
+        function showError(msg) {
+            status.classList.add('hidden');
+            errorDisplay.classList.remove('hidden');
+            errorMessage.textContent = msg;
         }
 
         async function processPDF(file) {
@@ -190,20 +186,47 @@
         }
 
         async function processImage(file) {
-            const worker = await Tesseract.createWorker();
-            await worker.loadLanguage('eng');
-            await worker.initialize('eng');
-            const { data: { text } } = await worker.recognize(file);
-            await worker.terminate();
-            return text;
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = async () => {
+                    const scale = 2.5;
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    // Advanced Image Enhancement
+                    for (let i = 0; i < data.length; i += 4) {
+                        const gray = 0.2126 * data[i] + 0.7152 * data[i+1] + 0.0722 * data[i+2];
+                        // Aggressive contrast to pop ink
+                        const val = gray > 150 ? 255 : (gray < 90 ? 0 : gray);
+                        data[i] = data[i+1] = data[i+2] = val;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    
+                    const worker = await Tesseract.createWorker();
+                    await worker.loadLanguage('eng');
+                    await worker.initialize('eng');
+                    await worker.setParameters({
+                        tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+                    });
+                    
+                    const { data: { text } } = await worker.recognize(canvas.toDataURL('image/png'));
+                    await worker.terminate();
+                    resolve(text);
+                };
+                img.src = URL.createObjectURL(file);
+            });
         }
 
         function generateContent(text) {
-            const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 40);
-            const words = text.toLowerCase().match(/\b[a-z]{6,}\b/g) || [];
+            const sentences = text.split(/[.!?\n]+/).map(s => s.trim()).filter(s => s.split(' ').length >= 5);
+            const words = text.toLowerCase().match(/\b[a-z]{5,}\b/g) || [];
             const freq = {};
             words.forEach(w => freq[w] = (freq[w] || 0) + 1);
-            const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 30).map(e => e[0]);
+            const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 40).map(e => e[0]);
 
             const quiz = [];
             const cards = [];
@@ -213,26 +236,24 @@
                 if (!found.length) return;
                 const target = found[0];
 
-                // Quiz Generation (up to 20)
-                if (quiz.length < 20) {
+                if (quiz.length < 15) {
                     const type = i % 3;
-                    if (type === 0) { // MCQ
+                    if (type === 0) {
                         const distractors = keywords.filter(k => k !== target).sort(() => 0.5 - Math.random()).slice(0, 3);
                         if (distractors.length === 3) {
-                            quiz.push({ type: 'mcq', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target, options: [target, ...distractors].sort(() => 0.5 - Math.random()) });
+                            quiz.push({ type: 'MCQ', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target, options: [target, ...distractors].sort(() => 0.5 - Math.random()) });
                         }
-                    } else if (type === 1) { // T/F
+                    } else if (type === 1) {
                         const isTrue = Math.random() > 0.5;
                         const qText = isTrue ? s : s.replace(new RegExp(target, 'gi'), keywords.find(k => k !== target) || "incorrect concept");
-                        quiz.push({ type: 'tf', q: `True or False: ${qText}`, a: isTrue ? 'true' : 'false' });
-                    } else { // Short Answer
-                        quiz.push({ type: 'sa', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target });
+                        quiz.push({ type: 'T/F', q: `True or False: ${qText}`, a: isTrue ? 'true' : 'false' });
+                    } else {
+                        quiz.push({ type: 'Short Answer', q: s.replace(new RegExp(target, 'gi'), '_____'), a: target });
                     }
                 }
 
-                // Notecard Generation (up to 30)
-                if (cards.length < 30) {
-                    cards.push({ front: `Explain the concept of: **${target.toUpperCase()}**`, back: s });
+                if (cards.length < 20) {
+                    cards.push({ front: `Concept: **${target.toUpperCase()}**`, back: s });
                 }
             });
 
@@ -245,11 +266,11 @@
                 <div class="claude-card p-6 space-y-4 quiz-item" data-answer="${q.a}" data-type="${q.type}">
                     <div class="text-xs font-bold text-amber-600 uppercase tracking-widest">${q.type}</div>
                     <p class="font-medium text-lg">${q.q}</p>
-                    ${q.type === 'mcq' ? `
+                    ${q.type === 'MCQ' ? `
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             ${q.options.map(opt => `<label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-amber-50"><input type="radio" name="q${i}" value="${opt}" class="w-4 h-4 text-amber-600"><span>${opt}</span></label>`).join('')}
                         </div>
-                    ` : q.type === 'tf' ? `
+                    ` : q.type === 'T/F' ? `
                         <div class="flex gap-4">
                             ${['True', 'False'].map(v => `<label class="flex-1 flex items-center justify-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-amber-50"><input type="radio" name="q${i}" value="${v.toLowerCase()}" class="w-4 h-4 text-amber-600"><span>${v}</span></label>`).join('')}
                         </div>
@@ -287,14 +308,12 @@
                 const correct = item.dataset.answer;
                 const feedback = item.querySelector('.feedback');
                 let user = '';
-                
-                if (type === 'mcq' || type === 'tf') {
+                if (type === 'MCQ' || type === 'T/F') {
                     const selected = item.querySelector(`input[name="q${i}"]:checked`);
                     user = selected ? selected.value : '';
                 } else {
                     user = item.querySelector('input').value.trim().toLowerCase();
                 }
-
                 feedback.classList.remove('hidden', 'bg-green-50', 'text-green-700', 'bg-red-50', 'text-red-700');
                 if (user === correct) {
                     score++;
@@ -314,7 +333,6 @@
             const notecardsView = document.getElementById('notecards-view');
             const tabQuiz = document.getElementById('tab-quiz');
             const tabNotecards = document.getElementById('tab-notecards');
-
             if (tab === 'quiz') {
                 quizView.classList.remove('hidden');
                 notecardsView.classList.add('hidden');
